@@ -228,6 +228,7 @@ def main(unclassified_path, train, training_set, grid_partitions):
             models = load(file)
     # Extract model with highest likelihood.
     model_details = models.loc[models["likelihood"].idxmax()]
+    breakpoint()
     print(
         f"Best model parameters: C={model_details['C']}, l1_ratio={model_details['l1_ratio']}"
     )
@@ -254,7 +255,6 @@ def main(unclassified_path, train, training_set, grid_partitions):
             with open(latest_file, "rb") as file:
                 models = load(file)
                 model_details = models.loc[models["likelihood"].idxmax()]
-                breakpoint()
                 print(
                     f"C={model_details['C']}, l1_ratio={model_details['l1_ratio']}"
                 )

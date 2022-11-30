@@ -103,19 +103,20 @@ def grid_search(params, X, X_test, y, y_test, *args, **kwargs):
     models_out = []
     for i, model in enumerate(models.get()):
         model.fit(X, y)
-        model_selected_features = SelectFromModel(estimator=model)
-        features_to_keep = model_selected_features.get_support()
-        model_test_features_kept = X_test.loc[:, features_to_keep]
-        predict = (
-            LogisticRegression(penalty="none")
-            .fit(model_test_features_kept, y_test)
-            .predict(model_test_features_kept)
-        )
+        predict = model.predict(X_test)
+        # model_selected_features = SelectFromModel(estimator=model)
+        # features_to_keep = model_selected_features.get_support()
+        # model_test_features_kept = X_test.loc[:, features_to_keep]
+        # predict = (
+        #     LogisticRegression(penalty="none")
+        #     .fit(model_test_features_kept, y_test)
+        #     .predict(model_test_features_kept)
+        # )
         out[i, 0] = params[i][0]
         out[i, 1] = params[i][1]
         out[i, 2] = (y_test == predict).sum() / X_test.shape[0]
         out[i, 3] = model.score(X_test, y_test)
-        out[i, 4] = features_to_keep.sum()
+        out[i, 4] = np.nan
         models_out.append(model)
     out = pd.DataFrame(
         out,
@@ -248,17 +249,21 @@ def main(unclassified_path, train, training_set, grid_partitions):
                 scaler.transform(unclassified), columns=unclassified.columns
             )
             # Import fitted models
-            with open("../Data/Models/grid.pickle", "rb") as file:
+            list_of_files = glob.glob("../Data/Models/*.pickle") # * means all if need specific format then *.csv
+            latest_file = max(list_of_files, key=os.path.getctime)
+            with open(latest_file, "rb") as file:
                 models = load(file)
                 model_details = models.loc[models["likelihood"].idxmax()]
+                breakpoint()
                 print(
                     f"C={model_details['C']}, l1_ratio={model_details['l1_ratio']}"
                 )
                 model = model_details["model"]
             # Generate predictions
-            predicted = predict(
-                training_scaled, response_training, unclassified, model
-            )
+            predicted = model.predict(unclassified_scaled)
+            # predicted = predict(
+            #     training_scaled, response_training, unclassified, model
+            # )
             # Return unscaled input data with predictions.
             classified = unclassified
             unclassified["class"] = predicted

@@ -3,9 +3,6 @@
 
 from datetime import date
 import glob
-import itertools as it
-import math
-from multiprocess import Pool
 import os
 from pickle import load, dump
 import re
@@ -66,30 +63,6 @@ def predict(training, response, test, model):
     test = test.loc[:, features]
     response = model.fit(training, response).predict(test)
     return response
-
-
-def cross_validate(X, y, model, n=100):
-    def fit_model(X, y, model):
-        X_resample = X.resample()
-        y_resample = y.resample()
-        model_selected_features = SelectFromModel(estimator=model)
-        features_to_keep = model_selected_features.get_support()
-        X_resample = X_resample.loc[:, features_to_keep]
-        predict = (
-            LogisticRegression(penalty="none")
-            .fit(X_resample, y_resample)
-            .predict(X_resample)
-        )
-        return predict
-
-    with Pool(os.cpu_count()) as pool:
-        results = pool.starmap_async(
-            fit_model(X, y, model), (() for _ in range(n))
-        )
-        results.wait()
-        results = np.array(results.get())
-        pool.terminate()
-    return np.apply_along_axis(lambda x: x.sum() / len(x), 1, results)
 
 
 def generate_param_grid(C=(0, 1, 5), l1_ratio=(0, 1, 5)):

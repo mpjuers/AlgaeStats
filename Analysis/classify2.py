@@ -183,12 +183,23 @@ def newest(path):
         The min, max and number of partitions for the l1 grid search.
     """,
 )
-def main(unclassified_path, train, training_set, c_grid, l1_grid):
+@click.option(
+    "--ignore-unknown/--keep-unknown",
+    "-i",
+    default=False,
+    required=False,
+    help="""
+        Whether to keep unknown datapoints.
+    """
+)
+def main(unclassified_path, train, training_set, c_grid, l1_grid, ignore_unknown):
     pipe = Pipeline(
         [("poly", PolynomialFeatures()), ("scaler", StandardScaler())]
     )
     # Combines all csvs in training directory into a single dataframe
     data = build_training(training_set)
+    if ignore_unknown:
+        data = data.loc[data["class"] != "Unknown"]
     # Isolate response data.
     response = data["class"]
     data = data.select_dtypes(float)
@@ -222,8 +233,9 @@ def main(unclassified_path, train, training_set, c_grid, l1_grid):
             .replace("(", "")
             .replace(")", "")
         )
+        unknown_str = "_ignore" if ignore_unknown else ""
         with open(
-            f"../Data/Models/{date.today()}_C-{c_str}_l1-{l1_str}.pickle", "wb"
+            f"../Data/Models/{date.today()}_C-{c_str}_l1-{l1_str}{unknown_str}.pickle", "wb"
         ) as file:
             dump(models, file)
     else:
@@ -251,7 +263,7 @@ def main(unclassified_path, train, training_set, c_grid, l1_grid):
             )
             # Import fitted models
             list_of_files = glob.glob(
-                "../Data/Models/*.pickle"
+                f"../Data/Models/*{unknown_str}.pickle"
             )  # * means all if need specific format then *.csv
             latest_file = max(list_of_files, key=os.path.getctime)
             with open(latest_file, "rb") as file:

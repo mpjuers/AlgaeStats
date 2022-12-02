@@ -14,8 +14,10 @@ import click
 import numpy as np
 import pandas as pd
 from sklearn.feature_selection import SelectFromModel
+from sklearn.model_selection import GridSearchCV
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 
 
 def build_training(path):
@@ -73,66 +75,60 @@ def cross_validate(X, y, model, n=100):
         model_selected_features = SelectFromModel(estimator=model)
         features_to_keep = model_selected_features.get_support()
         X_resample = X_resample.loc[:, features_to_keep]
-        predict = LogisticRegression(penalty="none").fit(X_resample, y_resample).predict(X_resample)
+        predict = (
+            LogisticRegression(penalty="none")
+            .fit(X_resample, y_resample)
+            .predict(X_resample)
+        )
         return predict
+
     with Pool(os.cpu_count()) as pool:
-        results = pool.starmap_async(fit_model(X, y, model), (() for _ in range(n)))
+        results = pool.starmap_async(
+            fit_model(X, y, model), (() for _ in range(n))
+        )
         results.wait()
         results = np.array(results.get())
         pool.terminate()
     return np.apply_along_axis(lambda x: x.sum() / len(x), 1, results)
 
 
-def grid_search(params, X, X_test, y, y_test, *args, **kwargs):
-    params = list(params)
-    with Pool(os.cpu_count()) as pool:
-        models = pool.map_async(
-            lambda x: LogisticRegression(
-                penalty="elasticnet",
-                solver="saga",
-                C=x[0],
-                l1_ratio=x[1],
-                max_iter=100,
-            ),
-            params,
-            chunksize=len(params) // os.cpu_count(),
-        )
-        models.wait()
-        pool.terminate()
-    out = np.empty((len(params), 5), dtype=float)
-    models_out = []
-    for i, model in enumerate(models.get()):
-        model.fit(X, y)
-        predict = model.predict(X_test)
-        # model_selected_features = SelectFromModel(estimator=model)
-        # features_to_keep = model_selected_features.get_support()
-        # model_test_features_kept = X_test.loc[:, features_to_keep]
-        # predict = (
-        #     LogisticRegression(penalty="none")
-        #     .fit(model_test_features_kept, y_test)
-        #     .predict(model_test_features_kept)
-        # )
-        out[i, 0] = params[i][0]
-        out[i, 1] = params[i][1]
-        out[i, 2] = (y_test == predict).sum() / X_test.shape[0]
-        out[i, 3] = model.score(X_test, y_test)
-        out[i, 4] = np.nan
-        models_out.append(model)
-    out = pd.DataFrame(
-        out,
-        columns=[
-            "C",
-            "l1_ratio",
-            "percent_correct",
-            "likelihood",
-            "no_features_kept",
-        ],
-    )
-    out["model"] = models_out
-    out = out.sort_values("likelihood", ascending=False)
-    print("Summary of fit models:")
-    print(out)
+def generate_param_grid(C=(0, 1, 5), l1_ratio=(0, 1, 5)):
+    out = {
+        "C": np.exp(
+            np.linspace(
+                np.log(C[0] + (C[1] - C[0]) / C[2]), np.log(C[1]), C[2]
+            )
+        ),
+        "l1_ratio": np.exp(
+            np.linspace(
+                np.log(
+                    l1_ratio[0] + (l1_ratio[1] - l1_ratio[0]) / l1_ratio[2]
+                ),
+                np.log(l1_ratio[1]),
+                C[2],
+            )
+        ),
+    }
     return out
+
+
+def grid_search(
+    X,
+    y,
+    param_grid={
+        "C": np.exp(np.linspace(np.log(1 / 10), 0, 10)),
+        "l1_ratio": np.exp(np.linspace(np.log(1 / 10), 0, 10)),
+    },
+    model=LogisticRegression(
+        penalty="elasticnet", solver="saga", n_jobs=-1, multi_class="ovr"
+    ),
+):
+    model = GridSearchCV(
+        estimator=model,
+        param_grid=param_grid,
+        n_jobs=-1,
+    ).fit(X, y)
+    return model
 
 
 def newest(path):
@@ -168,71 +164,73 @@ def newest(path):
     """,
 )
 @click.option(
-    "--grid-partitions",
-    "-g",
-    type=int,
-    default=10,
+    "--C-grid",
+    "-C",
+    default=(0, 1, 10),
     required=False,
+    type=(float, float, int),
     help="""
-        The number of grid partitions on each C and l1_ratio dimension.
-        The grid search will process n by n models.
-        Default: 10
+        The min, max and number of partitions for the C grid search.
     """,
 )
-def main(unclassified_path, train, training_set, grid_partitions):
+@click.option(
+    "--l1-grid",
+    "-l1",
+    default=(0, 1, 10),
+    required=False,
+    type=(float, float, int),
+    help="""
+        The min, max and number of partitions for the l1 grid search.
+    """,
+)
+def main(unclassified_path, train, training_set, c_grid, l1_grid):
+    pipe = Pipeline(
+        [("poly", PolynomialFeatures()), ("scaler", StandardScaler())]
+    )
     # Combines all csvs in training directory into a single dataframe
     data = build_training(training_set)
     # Isolate response data.
     response = data["class"]
     data = data.select_dtypes(float)
     data.drop(["ch2-ch1_ratio", "aspect_ratio"], axis=1, inplace=True)
-    training = data.sample(frac=0.5)
-    response_training = response.loc[training.index]
-    scaler = StandardScaler()
+    training = data
+    training_response = response.loc[training.index]
     training_scaled = pd.DataFrame(
-        scaler.fit_transform(training),
-        columns=training.columns,
+        pipe.fit_transform(training),
+        columns=pipe.get_feature_names_out(),
         index=training.index,
     )
-    test = data.drop(training.index)
-    test_scaled = pd.DataFrame(
-        scaler.transform(test),
-        columns=test.columns,
-        index=test.index,
-    )
-    response_test = response.loc[test_scaled.index]
     if train:
         # Generate combinations of C and l1_ratio for model training.
-        grid = it.product(
-            np.exp(
-                np.linspace(math.log(1 / grid_partitions), 0, grid_partitions)
-            ),
-            np.exp(
-                np.linspace(math.log(1 / grid_partitions), 0, grid_partitions)
-            ),
-        )
         # Fit models.
         models = grid_search(
-            grid,
             training_scaled,
-            test_scaled,
-            response_training,
-            response_test,
+            training_response,
+            param_grid=generate_param_grid(C=c_grid, l1_ratio=l1_grid),
+        )
+        c_str = (
+            str(c_grid)
+            .replace(",", "-")
+            .replace(" ", "")
+            .replace("(", "")
+            .replace(")", "")
+        )
+        l1_str = (
+            str(l1_grid)
+            .replace(",", "-")
+            .replace(" ", "")
+            .replace("(", "")
+            .replace(")", "")
         )
         with open(
-            f"../Data/Models/{date.today()}_{grid_partitions}.pickle", "wb"
+            f"../Data/Models/{date.today()}_C-{c_str}_l1-{l1_str}.pickle", "wb"
         ) as file:
             dump(models, file)
     else:
         with open(newest("../Data/Models"), "rb") as file:
             models = load(file)
     # Extract model with highest likelihood.
-    model_details = models.loc[models["likelihood"].idxmax()]
-    breakpoint()
-    print(
-        f"Best model parameters: C={model_details['C']}, l1_ratio={model_details['l1_ratio']}"
-    )
-    model = model_details["model"]
+    model = models.best_estimator_
 
     # Data cleaning and preprocessing.
     if unclassified_path:
@@ -247,24 +245,23 @@ def main(unclassified_path, train, training_set, grid_partitions):
                 :, training.columns.intersection(unclassified.columns)
             ]
             unclassified_scaled = pd.DataFrame(
-                scaler.transform(unclassified), columns=unclassified.columns
+                pipe.transform(unclassified),
+                columns=pipe.get_feature_names_out(),
+                index=unclassified.index,
             )
             # Import fitted models
-            list_of_files = glob.glob("../Data/Models/*.pickle") # * means all if need specific format then *.csv
+            list_of_files = glob.glob(
+                "../Data/Models/*.pickle"
+            )  # * means all if need specific format then *.csv
             latest_file = max(list_of_files, key=os.path.getctime)
             with open(latest_file, "rb") as file:
                 models = load(file)
-                model_details = models.loc[models["likelihood"].idxmax()]
                 print(
-                    f"C={model_details['C']}, l1_ratio={model_details['l1_ratio']}"
+                    f"best params: {models.best_params_}, best score: {models.best_score_}"
                 )
-                model = model_details["model"]
+                model = models.best_estimator_
             # Generate predictions
             predicted = model.predict(unclassified_scaled)
-            # predicted = predict(
-            #     training_scaled, response_training, unclassified, model
-            # )
-            # Return unscaled input data with predictions.
             classified = unclassified
             unclassified["class"] = predicted
             classified["capture_id"] = capture_id

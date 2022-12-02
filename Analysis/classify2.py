@@ -219,13 +219,13 @@ def main(
     # Combines all csvs in training directory into a single dataframe
     data = build_training(training_set)
     if ignore_unknown:
-        data = data.loc[data["class"] != "Unknown"]
+        training = data.copy().loc[data["class"] != "Unknown"]
+    else:
+        training = data.copy()
     # Isolate response data.
-    response = data["class"]
-    data = data.select_dtypes(float)
-    data.drop(["ch2-ch1_ratio", "aspect_ratio"], axis=1, inplace=True)
-    training = data
-    training_response = response.loc[training.index]
+    training_response = training["class"]
+    training.drop(["class", "ch2-ch1_ratio", "aspect_ratio"], axis=1, inplace=True)
+    training = training.select_dtypes(float)
     training_scaled = pd.DataFrame(
         pipe.fit_transform(training),
         columns=pipe.get_feature_names_out(),

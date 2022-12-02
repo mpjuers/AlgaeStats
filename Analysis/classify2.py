@@ -190,11 +190,31 @@ def newest(path):
     required=False,
     help="""
         Whether to keep unknown datapoints.
-    """
+    """,
 )
-def main(unclassified_path, train, training_set, c_grid, l1_grid, ignore_unknown):
+@click.option(
+    "--polynomial-degree",
+    "-p",
+    default=1,
+    required=False,
+    help="""
+       How many interaction terms to include. 
+    """,
+)
+def main(
+    unclassified_path,
+    train,
+    training_set,
+    c_grid,
+    l1_grid,
+    ignore_unknown,
+    polynomial_degree,
+):
     pipe = Pipeline(
-        [("poly", PolynomialFeatures()), ("scaler", StandardScaler())]
+        [
+            ("poly", PolynomialFeatures(degree=polynomial_degree)),
+            ("scaler", StandardScaler()),
+        ]
     )
     # Combines all csvs in training directory into a single dataframe
     data = build_training(training_set)
@@ -235,7 +255,8 @@ def main(unclassified_path, train, training_set, c_grid, l1_grid, ignore_unknown
         )
         unknown_str = "_ignore" if ignore_unknown else ""
         with open(
-            f"../Data/Models/{date.today()}_C-{c_str}_l1-{l1_str}{unknown_str}.pickle", "wb"
+            f"../Data/Models/{date.today()}_C-{c_str}_l1-{l1_str}_p-{polynomial_degree}{unknown_str}.pickle",
+            "wb",
         ) as file:
             dump(models, file)
     else:

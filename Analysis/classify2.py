@@ -10,6 +10,7 @@ import re
 import click
 import numpy as np
 import pandas as pd
+from sklearn.decomposition import PCA
 from sklearn.feature_selection import SelectFromModel
 from sklearn.model_selection import GridSearchCV
 from sklearn.linear_model import LogisticRegression
@@ -93,9 +94,14 @@ def grid_search(
         "l1_ratio": np.exp(np.linspace(np.log(1 / 10), 0, 10)),
     },
     model=LogisticRegression(
-        penalty="elasticnet", solver="saga", n_jobs=-1, multi_class="ovr"
+        penalty="elasticnet",
+        solver="saga",
+        n_jobs=-1,
+        multi_class="ovr",
     ),
+    max_iter=100,
 ):
+    model.set_params(max_iter=max_iter)
     model = GridSearchCV(
         estimator=model,
         param_grid=param_grid,
@@ -174,6 +180,16 @@ def newest(path):
        How many interaction terms to include. 
     """,
 )
+@click.option(
+    "--max-iter",
+    "-m",
+    default=100,
+    required=False,
+    type=int,
+    help="""
+        The maximum number of iterations used to fit the logistic regression.
+    """
+)
 def main(
     unclassified_path,
     train,
@@ -182,11 +198,13 @@ def main(
     l1_grid,
     ignore_unknown,
     polynomial_degree,
+    max_iter,
 ):
     pipe = Pipeline(
         [
-            ("poly", PolynomialFeatures(degree=polynomial_degree)),
             ("scaler", StandardScaler()),
+            ("poly", PolynomialFeatures(degree=polynomial_degree)),
+            ("pca", PCA()),
         ]
     )
     # Combines all csvs in training directory into a single dataframe
@@ -197,7 +215,9 @@ def main(
         training = data.copy()
     # Isolate response data.
     training_response = training["class"]
-    training.drop(["class", "ch2-ch1_ratio", "aspect_ratio"], axis=1, inplace=True)
+    training.drop(
+        ["class", "ch2-ch1_ratio", "aspect_ratio"], axis=1, inplace=True
+    )
     training = training.select_dtypes(float)
     training_scaled = pd.DataFrame(
         pipe.fit_transform(training),
@@ -211,6 +231,7 @@ def main(
             training_scaled,
             training_response,
             param_grid=generate_param_grid(C=c_grid, l1_ratio=l1_grid),
+            max_iter=max_iter,
         )
         c_str = (
             str(c_grid)

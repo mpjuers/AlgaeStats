@@ -116,6 +116,15 @@ def newest(path):
     return max(paths, key=os.path.getctime)
 
 
+def remove_pcs(data, model, threshold=0.95):
+    var = model.explained_variance_ratio_
+    cum_var = []
+    for i, _ in enumerate(var):
+        cum_var.append(var[: i + 1].sum())
+    cum_var_bool = np.array(cum_var) < threshold
+    return data.iloc[:, cum_var_bool]
+
+
 @click.command()
 @click.argument(
     "unclassified_path",
@@ -188,7 +197,7 @@ def newest(path):
     type=int,
     help="""
         The maximum number of iterations used to fit the logistic regression.
-    """
+    """,
 )
 def main(
     unclassified_path,
@@ -224,6 +233,7 @@ def main(
         columns=pipe.get_feature_names_out(),
         index=training.index,
     )
+    training_scaled = remove_pcs(training_scaled, pipe.named_steps["pca"])
     if train:
         # Generate combinations of C and l1_ratio for model training.
         # Fit models.
@@ -276,6 +286,9 @@ def main(
                 columns=pipe.get_feature_names_out(),
                 index=unclassified.index,
             )
+            unclassified_scaled = remove_pcs(
+                unclassified_scaled, pipe.named_steps["pca"]
+            )
             # Import fitted models
             list_of_files = glob.glob(
                 f"../Data/Models/*{unknown_str}.pickle"
@@ -283,10 +296,10 @@ def main(
             latest_file = max(list_of_files, key=os.path.getctime)
             with open(latest_file, "rb") as file:
                 models = load(file)
-                print(
-                    f"best params: {models.best_params_}, best score: {models.best_score_}"
-                )
-                model = models.best_estimator_
+            print(
+                f"File: {unclassified_path}, best params: {models.best_params_}, best score: {models.best_score_}"
+            )
+            model = models.best_estimator_
             # Generate predictions
             predicted = model.predict(unclassified_scaled)
             classified = unclassified

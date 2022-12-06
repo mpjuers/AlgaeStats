@@ -277,6 +277,10 @@ def main(
             output_base = re.sub(".csv", "_classified.csv", basename)
             outfile = f"../Data/Classified/{output_base}"
             unclassified = format_columns(pd.read_csv(file, index_col="UUID"))
+            if ignore_unknown:
+                unclassified = unclassified.copy().loc[unclassified["class"] != "Unknown", :]
+            else:
+                unclassified = unclassified.copy()
             capture_id = unclassified["capture_id"]
             unclassified = unclassified.loc[
                 :, training.columns.intersection(unclassified.columns)

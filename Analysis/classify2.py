@@ -209,6 +209,7 @@ def main(
     polynomial_degree,
     max_iter,
 ):
+    unknown_str = "_ignore" if ignore_unknown else ""
     pipe = Pipeline(
         [
             ("scaler", StandardScaler()),
@@ -257,7 +258,6 @@ def main(
             .replace("(", "")
             .replace(")", "")
         )
-        unknown_str = "_ignore" if ignore_unknown else ""
         with open(
             f"../Data/Models/{date.today()}_C-{c_str}_l1-{l1_str}_p-{polynomial_degree}{unknown_str}.pickle",
             "wb",

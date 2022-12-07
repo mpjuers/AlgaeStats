@@ -50,22 +50,6 @@ def format_columns(data):
     return data
 
 
-def predict(training, response, test, model):
-    """
-    Generate prediction from trained model.
-
-    training (pd.DataFrame): The data used to fit the model.
-    response (pd.Series): The categorical response data for the training set.
-    test (pd.DataFrame): The data for which responses are to be predicted.
-    model (LogisticRegression): The model used to fit predicted response data.
-    """
-    features = training.columns[SelectFromModel(model).get_support()]
-    training = training.loc[:, features]
-    test = test.loc[:, features]
-    response = model.fit(training, response).predict(test)
-    return response
-
-
 def generate_param_grid(C=(0, 1, 5), l1_ratio=(0, 1, 5)):
     out = {
         "C": np.exp(
@@ -100,12 +84,16 @@ def grid_search(
         multi_class="ovr",
     ),
     max_iter=100,
+    verbose=False,
+    return_train_score=False,
 ):
     model.set_params(max_iter=max_iter)
     model = GridSearchCV(
         estimator=model,
         param_grid=param_grid,
         n_jobs=-1,
+        verbose=verbose,
+        return_train_score=return_train_score,
     ).fit(X, y)
     return model
 
@@ -220,12 +208,37 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set):
         The maximum number of iterations used to fit the logistic regression.
     """,
 )
+@click.option(
+    "--verbose",
+    "-v",
+    default=0,
+    required=False,
+    type=click.IntRange(0, 3),
+    help="""
+        Controls the verbosity of the grid search cross-validation.
+        From sklearn documentation:
+            1 : the computation time for each fold and parameter candidate is displayed;
+            2 : the score is also displayed;
+            3 : the fold and candidate parameter indexes are also displayed together with the starting time of the computation.
+    """
+)
+@click.option(
+    "--return-train-score/--no-return-train-score",
+    "-r",
+    type=bool,
+    default=False,
+    help="""
+        Include training score in results. Can increase computation time.
+    """
+)
 @click.pass_context
 def train(
     ctx,
     c_grid,
     l1_grid,
     max_iter,
+    verbose,
+    return_train_score,
 ):
     # Generate combinations of C and l1_ratio for model training.
     # Fit models.
@@ -254,6 +267,7 @@ def train(
         "wb",
     ) as file:
         dump(models, file)
+    return None
 
 
 @cli.command("classify")
@@ -290,7 +304,7 @@ def classify(
         unclassified = format_columns(pd.read_csv(file, index_col="UUID"))
         capture_id = unclassified["capture_id"]
         unclassified = unclassified.loc[
-            :, training.columns.intersection(unclassified.columns)
+            :, ctx.obj["training"].columns.intersection(unclassified.columns)
         ]
         unclassified_scaled = pd.DataFrame(
             ctx.obj["pipe"].transform(unclassified),

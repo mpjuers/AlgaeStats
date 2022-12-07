@@ -167,6 +167,7 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set):
         ["class", "ch2-ch1_ratio", "aspect_ratio"], axis=1, inplace=True
     )
     training = training.select_dtypes(float)
+    ctx.obj["training_columns"] = training.columns
     training_scaled = pd.DataFrame(
         ctx.obj["pipe"].fit_transform(training),
         columns=ctx.obj["pipe"].get_feature_names_out(),
@@ -303,9 +304,7 @@ def classify(
         outfile = f"../Data/Classified/{output_base}"
         unclassified = format_columns(pd.read_csv(file, index_col="UUID"))
         capture_id = unclassified["capture_id"]
-        unclassified = unclassified.loc[
-            :, ctx.obj["training"].columns.intersection(unclassified.columns)
-        ]
+        unclassified = unclassified.loc[:, ctx.obj["training_columns"]]
         unclassified_scaled = pd.DataFrame(
             ctx.obj["pipe"].transform(unclassified),
             columns=ctx.obj["pipe"].get_feature_names_out(),

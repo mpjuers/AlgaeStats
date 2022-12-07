@@ -51,6 +51,7 @@ def format_columns(data):
 
 
 def generate_param_grid(C=(0, 1, 5), l1_ratio=(0, 1, 5)):
+    # Insert is used to add the zero value, which cannot be added through log
     out = {
         "C": np.exp(
             np.linspace(
@@ -99,6 +100,9 @@ def grid_search(
 
 
 def newest(path):
+    """
+    Given path, find most recent file.
+    """
     files = os.listdir(path)
     paths = [os.path.join(path, basename) for basename in files]
     return max(paths, key=os.path.getctime)
@@ -221,7 +225,7 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set):
             1 : the computation time for each fold and parameter candidate is displayed;
             2 : the score is also displayed;
             3 : the fold and candidate parameter indexes are also displayed together with the starting time of the computation.
-    """
+    """,
 )
 @click.option(
     "--return-train-score/--no-return-train-score",
@@ -230,7 +234,7 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set):
     default=False,
     help="""
         Include training score in results. Can increase computation time.
-    """
+    """,
 )
 @click.pass_context
 def train(
@@ -248,6 +252,8 @@ def train(
         ctx.obj["training_response"],
         param_grid=generate_param_grid(C=c_grid, l1_ratio=l1_grid),
         max_iter=max_iter,
+        verbose=verbose,
+        return_train_score=return_train_score,
     )
     c_str = (
         str(c_grid)
@@ -264,7 +270,12 @@ def train(
         .replace(")", "")
     )
     with open(
-        f"../Data/Models/{date.today()}_C-{c_str}_l1-{l1_str}_p-{ctx.obj['polynomial_degree']}{ctx.obj['unknown_str']}.pickle",
+        (
+            f"../Data/Models/{date.today()}"
+            "_C-{c_str}_l1-{l1_str}"
+            "_p-{ctx.obj['polynomial_degree']}"
+            "{ctx.obj['unknown_str']}.pickle"
+        ),
         "wb",
     ) as file:
         dump(models, file)
@@ -299,9 +310,11 @@ def classify(
     # Data cleaning and preprocessing.
     for file in unclassified_path:
         print(f"processing {file}")
+        # Output filename manipulation
         basename = os.path.basename(file)
         output_base = re.sub(".csv", "_classified.csv", basename)
         outfile = f"../Data/Classified/{output_base}"
+        # Unclassified data formatting
         unclassified = format_columns(pd.read_csv(file, index_col="UUID"))
         capture_id = unclassified["capture_id"]
         unclassified = unclassified.loc[:, ctx.obj["training_columns"]]
@@ -310,13 +323,14 @@ def classify(
             columns=ctx.obj["pipe"].get_feature_names_out(),
             index=unclassified.index,
         )
+        # Remove pcs. explaining minority of variance
         unclassified_scaled = remove_pcs(
             unclassified_scaled, ctx.obj["pipe"].named_steps["pca"]
         )
-        # Import fitted models
+        # Import most recent fitted models and best estimator
         list_of_files = glob.glob(
             f"../Data/Models/*{ctx.obj['unknown_str']}.pickle"
-        )  # * means all if need specific format then *.csv
+        )
         latest_file = max(list_of_files, key=os.path.getctime)
         with open(latest_file, "rb") as file:
             models = load(file)

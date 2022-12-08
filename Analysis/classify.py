@@ -3,8 +3,10 @@
 
 from datetime import date
 import glob
+from pathlib import Path
 import os
 from pickle import load, dump
+import platform
 import re
 
 import click
@@ -29,6 +31,7 @@ def build_training(path):
     for dataset in datasets:
         data = pd.read_csv(dataset, index_col="UUID")
         dataset_list.append(data)
+    print(f"Training on {len(dataset_list)} datasets.")
     df = pd.concat(dataset_list, axis=0)
     df = format_columns(df)
     return df
@@ -272,9 +275,9 @@ def train(
     with open(
         (
             f"../Data/Models/{date.today()}"
-            "_C-{c_str}_l1-{l1_str}"
-            "_p-{ctx.obj['polynomial_degree']}"
-            "{ctx.obj['unknown_str']}.pickle"
+            f"_C-{c_str}_l1-{l1_str}"
+            f"_p-{ctx.obj['polynomial_degree']}"
+            f"{ctx.obj['unknown_str']}.pickle"
         ),
         "wb",
     ) as file:
@@ -328,10 +331,18 @@ def classify(
             unclassified_scaled, ctx.obj["pipe"].named_steps["pca"]
         )
         # Import most recent fitted models and best estimator
-        list_of_files = glob.glob(
-            f"../Data/Models/*{ctx.obj['unknown_str']}.pickle"
-        )
-        latest_file = max(list_of_files, key=os.path.getctime)
+        try:
+            if "Windows" in platform.platform():
+                windows_path = Path(r"..\Data\Models")
+                list_of_files = list(windows_path.glob(rf"*{ctx.obj['unknown_str']}.pickle"))
+            else:
+                list_of_files = glob.glob(
+                    f"../Data/Models/*{ctx.obj['unknown_str']}.pickle"
+                )
+            latest_file = max(list_of_files, key=os.path.getctime)
+        except ValueError:
+            print("No model file matching ignore flag.")
+            return None
         with open(latest_file, "rb") as file:
             models = load(file)
         print(

@@ -43,14 +43,15 @@ def format_columns(data):
 
     data (pd.DataFrame): The data whose columns are to be formatted.
     """
-    data.columns = (
+    copy = data.copy()
+    copy.columns = (
         data.columns.str.replace(" ", "_")
         .str.replace("/", "-")
         .str.replace("(", "")
         .str.replace(")", "")
         .str.lower()
     )
-    return data
+    return copy 
 
 
 def generate_param_grid(C=(0, 1, 5), l1_ratio=(0, 1, 5)):
@@ -272,6 +273,9 @@ def train(
         .replace("(", "")
         .replace(")", "")
     )
+    print(
+        f"Best params: {models.best_params_}, Best score: {models.best_score_}"
+    )
     with open(
         (
             f"../Data/Models/{date.today()}"
@@ -318,7 +322,9 @@ def classify(
         output_base = re.sub(".csv", "_classified.csv", basename)
         outfile = f"../Data/Classified/{output_base}"
         # Unclassified data formatting
-        unclassified = format_columns(pd.read_csv(file, index_col="UUID"))
+        data = pd.read_csv(file, index_col="UUID").copy()
+        unclassified = format_columns(data)
+        data.reset_index(inplace=True)
         capture_id = unclassified["capture_id"]
         unclassified = unclassified.loc[:, ctx.obj["training_columns"]]
         unclassified_scaled = pd.DataFrame(
@@ -353,9 +359,8 @@ def classify(
         # Generate predictions
         predicted = model.predict(unclassified_scaled)
         classified = unclassified
-        unclassified["class"] = predicted
-        classified["capture_id"] = capture_id
-        classified.to_csv(outfile)
+        data["Class"] = predicted
+        data.to_csv(outfile)
     return None
 
 

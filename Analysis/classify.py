@@ -20,13 +20,21 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 
 
+class ModelOutput:
+    def __init__(self, model, pipe, training):
+        self.models = model
+        self.pipe = pipe
+        self.training = training
+        return None
+
+
 def build_training(path):
     """
     Compile all training datasets in path and concatenate into one dataframe.
 
     path (str): The directory containing training sets.
     """
-    datasets = glob.iglob(os.path.join(path, "*.csv"))
+    datasets = glob.iglob(os.path.join(path, r"**/*.csv"), recursive=True)
     dataset_list = []
     for dataset in datasets:
         data = pd.read_csv(dataset, index_col="UUID")
@@ -113,7 +121,7 @@ def newest(path):
 
 
 def remove_pcs(data, model, threshold=0.95):
-    var = model.explained_variance_ratio_
+    var = model.named_steps["pca"].explained_variance_ratio_
     cum_var = []
     for i, _ in enumerate(var):
         cum_var.append(var[: i + 1].sum())
@@ -155,17 +163,17 @@ def remove_pcs(data, model, threshold=0.95):
 @click.pass_context
 def cli(ctx, polynomial_degree, ignore_unknown, training_set):
     # Combines all csvs in training directory into a single dataframe
-    data = build_training(training_set)
+    ctx.obj["data"] = build_training(training_set)
     if ignore_unknown:
-        training = data.copy().loc[data["class"] != "Unknown"]
+        training = ctx.obj["data"].copy().loc[ctx.obj["data"]["Class"] != "Unknown"]
     else:
-        training = data.copy()
+        training = ctx.obj["data"].copy()
     ctx.obj["unknown_str"] = "_ignore" if ignore_unknown else ""
     ctx.obj["polynomial_degree"] = polynomial_degree
     ctx.obj["pipe"] = Pipeline(
         [
-            ("scaler", StandardScaler()),
             ("poly", PolynomialFeatures(degree=polynomial_degree)),
+            ("scaler", StandardScaler()),
             ("pca", PCA()),
         ]
     )
@@ -182,7 +190,7 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set):
         index=training.index,
     )
     ctx.obj["training"] = remove_pcs(
-        training_scaled, ctx.obj["pipe"].named_steps["pca"]
+        training_scaled, ctx.obj["pipe"]
     )
 
 
@@ -276,6 +284,7 @@ def train(
     print(
         f"Best params: {models.best_params_}, Best score: {models.best_score_}"
     )
+    out = ModelOutput(models, ctx.obj["pipe"], ctx.obj["data"].reset_index())
     with open(
         (
             f"../Data/Models/{date.today()}"
@@ -285,7 +294,7 @@ def train(
         ),
         "wb",
     ) as file:
-        dump(models, file)
+        dump(out, file)
     return None
 
 
@@ -313,7 +322,7 @@ def classify(
     with open(newest("../Data/Models"), "rb") as file:
         models = load(file)
     # Extract model with highest likelihood.
-    model = models.best_estimator_
+    model = models.models.best_estimator_
     # Data cleaning and preprocessing.
     for file in unclassified_path:
         print(f"processing {file}")
@@ -328,13 +337,13 @@ def classify(
         capture_id = unclassified["capture_id"]
         unclassified = unclassified.loc[:, ctx.obj["training_columns"]]
         unclassified_scaled = pd.DataFrame(
-            ctx.obj["pipe"].transform(unclassified),
-            columns=ctx.obj["pipe"].get_feature_names_out(),
+            models.pipe.transform(unclassified),
+            columns=models.pipe.get_feature_names_out(),
             index=unclassified.index,
         )
         # Remove pcs. explaining minority of variance
         unclassified_scaled = remove_pcs(
-            unclassified_scaled, ctx.obj["pipe"].named_steps["pca"]
+            unclassified_scaled, ctx.obj["pipe"]
         )
         # Import most recent fitted models and best estimator
         # Fucking Windows... :/
@@ -353,9 +362,9 @@ def classify(
         with open(latest_file, "rb") as file:
             models = load(file)
         print(
-            f"File: {unclassified_path}, best params: {models.best_params_}, best score: {models.best_score_}"
+            f"File: {unclassified_path}, best params: {models.models.best_params_}, best score: {models.models.best_score_}"
         )
-        model = models.best_estimator_
+        model = models.models.best_estimator_
         # Generate predictions
         predicted = model.predict(unclassified_scaled)
         classified = unclassified

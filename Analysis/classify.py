@@ -12,12 +12,90 @@ import re
 import click
 import numpy as np
 import pandas as pd
+import pyhdfe as ph
+from sklearn.base import BaseEstimator
 from sklearn.decomposition import PCA
-from sklearn.feature_selection import SelectFromModel
 from sklearn.model_selection import GridSearchCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, PolynomialFeatures
+from sklearn.utils import check_X_y
+
+
+class Residualizer(BaseEstimator):
+    """ A template estimator to be used as a reference implementation.
+    For more information regarding how to build your own estimator, read more
+    in the :ref:`User Guide <user_guide>`.
+    Parameters
+    ----------
+    demo_param : str, default='demo_param'
+        A parameter used for demonstation of how to pass and store paramters.
+    Examples
+    --------
+    >>> from skltemplate import TemplateEstimator
+    >>> import numpy as np
+    >>> X = np.arange(100).reshape(100, 1)
+    >>> y = np.zeros((100, ))
+    >>> estimator = TemplateEstimator()
+    >>> estimator.fit(X, y)
+    TemplateEstimator()
+    """
+    def __init__(self):
+        self.is_fitted=False
+
+    def fit(self, X, y):
+        """A reference implementation of a fitting function.
+        Parameters
+        ----------
+        X : {array-like, sparse matrix}, shape (n_samples, n_features)
+            The training input samples.
+        y : array-like, shape (n_samples,) or (n_samples, n_outputs)
+            The target values (class labels in classification, real numbers in
+            regression).
+        Returns
+        -------
+        self : object
+            Returns self.
+        """
+        self.feature_names_in_ = X.columns
+        X, y = check_X_y(X, y)
+        try:
+            self.classes = y 
+            self.dummies = pd.get_dummies(self.classes)
+            self.transformer = ph.create(self.dummies)
+        except ValueError:
+            pass
+        self.is_fitted_ = True
+        # `fit` should always return `self`
+        return self
+
+    def get_feature_names_out(self, input_features=None):
+        feature_names_out = input_features
+        return feature_names_out
+
+    def transform(self, X):
+        out = self.transformer.residualize(X)
+        return out
+
+    def fit_transform(self, X, y):
+        self.fit(X, y)
+        return self.transform(X)
+
+    # def predict(self, X):
+    #     """ A reference implementation of a predicting function.
+    #     Parameters
+    #     ----------
+    #     X : {array-like, sparse matrix}, shape (n_samples, n_features)
+    #         The training input samples.
+    #     Returns
+    #     -------
+    #     y : ndarray, shape (n_samples,)
+    #         Returns an array of ones.
+    #     """
+    #     X = check_array(X, accept_sparse=True)
+    #     check_is_fitted(self, 'is_fitted_')
+    #     return np.ones(X.shape[0], dtype=np.int64)
+        
 
 
 class ModelOutput:
@@ -53,10 +131,10 @@ def format_columns(data):
     """
     copy = data.copy()
     copy.columns = (
-        data.columns.str.replace(" ", "_")
-        .str.replace("/", "-")
-        .str.replace("(", "")
-        .str.replace(")", "")
+        data.columns.str.replace(" ", "_", regex=False)
+        .str.replace("/", "-", regex=False)
+        .str.replace("(", "", regex=False)
+        .str.replace(")", "", regex=False)
         .str.lower()
     )
     return copy 
@@ -120,13 +198,13 @@ def newest(path):
     return max(paths, key=os.path.getctime)
 
 
-def remove_pcs(data, model, threshold=0.95):
-    var = model.named_steps["pca"].explained_variance_ratio_
-    cum_var = []
-    for i, _ in enumerate(var):
-        cum_var.append(var[: i + 1].sum())
-    cum_var_bool = np.array(cum_var) < threshold
-    return data.iloc[:, cum_var_bool]
+# def remove_pcs(data, model, threshold=0.95):
+#     var = model.named_steps["pca"].explained_variance_ratio_
+#     cum_var = []
+#     for i, _ in enumerate(var):
+#         cum_var.append(var[: i + 1].sum())
+#     cum_var_bool = np.array(cum_var) < threshold
+#     return data.iloc[:, cum_var_bool]
 
 
 @click.group(chain=True)
@@ -170,28 +248,34 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set):
         training = ctx.obj["data"].copy()
     ctx.obj["unknown_str"] = "_ignore" if ignore_unknown else ""
     ctx.obj["polynomial_degree"] = polynomial_degree
+    # Isolate response data.
+    try:
+        ctx.obj["training_response"] = training["operator_classification"]
+        ctx.obj["default_response"] = training["class"]
+    except KeyError:
+        ctx.obj["training_response"] = training["class"]
+        ctx.obj["default_response"] = np.zeros(training.shape[0])
     ctx.obj["pipe"] = Pipeline(
         [
-            ("poly", PolynomialFeatures(degree=polynomial_degree)),
+            ("resid", Residualizer()),
             ("scaler", StandardScaler()),
-            ("pca", PCA()),
+            # ("pca", PCA()),
         ]
     )
-    # Isolate response data.
-    ctx.obj["training_response"] = training["class"]
     training.drop(
         ["class", "ch2-ch1_ratio", "aspect_ratio"], axis=1, inplace=True
     )
     training = training.select_dtypes(float)
     ctx.obj["training_columns"] = training.columns
     training_scaled = pd.DataFrame(
-        ctx.obj["pipe"].fit_transform(training),
+        ctx.obj["pipe"].fit_transform(training, y=ctx.obj["default_response"]),
         columns=ctx.obj["pipe"].get_feature_names_out(),
         index=training.index,
     )
-    ctx.obj["training"] = remove_pcs(
-        training_scaled, ctx.obj["pipe"]
-    )
+    ctx.obj["training"] = training_scaled
+    # ctx.obj["training"] = remove_pcs(
+    #     training_scaled, ctx.obj["pipe"]
+    # )
 
 
 @cli.command("train")
@@ -342,9 +426,9 @@ def classify(
             index=unclassified.index,
         )
         # Remove pcs. explaining minority of variance
-        unclassified_scaled = remove_pcs(
-            unclassified_scaled, ctx.obj["pipe"]
-        )
+        # unclassified_scaled = remove_pcs(
+        #     unclassified_scaled, ctx.obj["pipe"]
+        # )
         # Import most recent fitted models and best estimator
         # Fucking Windows... :/
         try:

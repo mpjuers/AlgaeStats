@@ -22,6 +22,18 @@ from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 from sklearn.utils import check_X_y
 
 
+def reduce(data, pca, threshold=0.95):
+    var_comp = pca.explained_variance_ratio_
+    cum_var = []
+    i_var = []
+    for i, var in var_comp:
+        var = var + var_comp[i + 1]
+        if var <= threshold:
+            cum_var.append(var)
+            i_var.append(i)
+        return data.loc[:, data.columns[i_var]]
+
+
 class Residualizer(BaseEstimator):
     """ A template estimator to be used as a reference implementation.
     For more information regarding how to build your own estimator, read more
@@ -40,6 +52,7 @@ class Residualizer(BaseEstimator):
     >>> estimator.fit(X, y)
     TemplateEstimator()
     """
+
     def __init__(self):
         self.is_fitted=False
 
@@ -59,18 +72,15 @@ class Residualizer(BaseEstimator):
         """
         self.feature_names_in_ = X.columns
         X, y = check_X_y(X, y)
-        try:
-            self.classes = y 
-            self.dummies = pd.get_dummies(self.classes)
-            self.transformer = ph.create(self.dummies)
-        except ValueError:
-            pass
+        self.classes = y 
+        self.dummies = pd.get_dummies(self.classes)
+        self.transformer = ph.create(self.dummies)
         self.is_fitted_ = True
         # `fit` should always return `self`
         return self
 
     def get_feature_names_out(self, input_features=None):
-        feature_names_out = input_features
+        feature_names_out = self.feature_names_in_
         return feature_names_out
 
     def transform(self, X):
@@ -174,7 +184,7 @@ def grid_search(
         n_jobs=-1,
         multi_class="ovr",
     ),
-    max_iter=100,
+    max_iter=500,
     verbose=False,
     return_train_score=False,
 ):
@@ -259,7 +269,6 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set):
         [
             ("resid", Residualizer()),
             ("scaler", StandardScaler()),
-            # ("pca", PCA()),
         ]
     )
     training.drop(
@@ -269,7 +278,7 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set):
     ctx.obj["training_columns"] = training.columns
     training_scaled = pd.DataFrame(
         ctx.obj["pipe"].fit_transform(training, y=ctx.obj["default_response"]),
-        columns=ctx.obj["pipe"].get_feature_names_out(),
+        columns=ctx.obj["training_columns"],
         index=training.index,
     )
     ctx.obj["training"] = training_scaled
@@ -415,13 +424,14 @@ def classify(
         output_base = re.sub(".csv", "_classified.csv", basename)
         outfile = f"../Data/Classified/{output_base}"
         # Unclassified data formatting
-        data = pd.read_csv(file, index_col="UUID").copy()
+        data = pd.read_csv(file, index_col="UUID")
         unclassified = format_columns(data)
         data.reset_index(inplace=True)
         capture_id = unclassified["capture_id"]
+        default_classification = unclassified["class"]
         unclassified = unclassified.loc[:, ctx.obj["training_columns"]]
         unclassified_scaled = pd.DataFrame(
-            models.pipe.transform(unclassified),
+            models.pipe.fit_transform(unclassified, default_classification),
             columns=models.pipe.get_feature_names_out(),
             index=unclassified.index,
         )

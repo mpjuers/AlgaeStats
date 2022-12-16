@@ -35,7 +35,7 @@ def reduce(data, pca, threshold=0.95):
 
 
 class Residualizer(BaseEstimator):
-    """ A template estimator to be used as a reference implementation.
+    """A template estimator to be used as a reference implementation.
     For more information regarding how to build your own estimator, read more
     in the :ref:`User Guide <user_guide>`.
     Parameters
@@ -54,7 +54,7 @@ class Residualizer(BaseEstimator):
     """
 
     def __init__(self):
-        self.is_fitted=False
+        self.is_fitted = False
 
     def fit(self, X, y):
         """A reference implementation of a fitting function.
@@ -72,7 +72,7 @@ class Residualizer(BaseEstimator):
         """
         self.feature_names_in_ = X.columns
         X, y = check_X_y(X, y)
-        self.classes = y 
+        self.classes = y
         self.dummies = pd.get_dummies(self.classes)
         self.transformer = ph.create(self.dummies)
         self.is_fitted_ = True
@@ -105,7 +105,6 @@ class Residualizer(BaseEstimator):
     #     X = check_array(X, accept_sparse=True)
     #     check_is_fitted(self, 'is_fitted_')
     #     return np.ones(X.shape[0], dtype=np.int64)
-        
 
 
 class ModelOutput:
@@ -147,7 +146,7 @@ def format_columns(data):
         .str.replace(")", "", regex=False)
         .str.lower()
     )
-    return copy 
+    return copy
 
 
 def generate_param_grid(C=(0, 1, 5), l1_ratio=(0, 1, 5)):
@@ -253,7 +252,9 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set):
     # Combines all csvs in training directory into a single dataframe
     ctx.obj["data"] = build_training(training_set)
     if ignore_unknown:
-        training = ctx.obj["data"].copy().loc[ctx.obj["data"]["Class"] != "Unknown"]
+        training = (
+            ctx.obj["data"].copy().loc[ctx.obj["data"]["Class"] != "Unknown"]
+        )
     else:
         training = ctx.obj["data"].copy()
     ctx.obj["unknown_str"] = "_ignore" if ignore_unknown else ""
@@ -264,10 +265,9 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set):
         ctx.obj["default_response"] = training["class"]
     except KeyError:
         ctx.obj["training_response"] = training["class"]
-        ctx.obj["default_response"] = np.zeros(training.shape[0])
+        ctx.obj["default_response"] = np.full(training.shape[0], -1)
     ctx.obj["pipe"] = Pipeline(
         [
-            ("resid", Residualizer()),
             ("scaler", StandardScaler()),
         ]
     )
@@ -276,8 +276,15 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set):
     )
     training = training.select_dtypes(float)
     ctx.obj["training_columns"] = training.columns
+    training_arr = pd.DataFrame(
+        Residualizer().fit_transform(training, ctx.obj["default_response"]),
+        columns = training.columns,
+        index = training.index
+    )
     training_scaled = pd.DataFrame(
-        ctx.obj["pipe"].fit_transform(training, y=ctx.obj["default_response"]),
+        ctx.obj["pipe"].fit_transform(
+            training_arr, ctx.obj["training_response"]
+        ),
         columns=ctx.obj["training_columns"],
         index=training.index,
     )
@@ -321,7 +328,7 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set):
 @click.option(
     "--verbose",
     "-v",
-    default=0,
+    default=1,
     required=False,
     type=click.IntRange(0, 3),
     help="""
@@ -428,12 +435,20 @@ def classify(
         unclassified = format_columns(data)
         data.reset_index(inplace=True)
         capture_id = unclassified["capture_id"]
-        default_classification = unclassified["class"]
+        try:
+            default_classification = unclassified["class"]
+        except KeyError:
+            default_classification = np.full(unclassified.shape[0], -1)
         unclassified = unclassified.loc[:, ctx.obj["training_columns"]]
-        unclassified_scaled = pd.DataFrame(
-            models.pipe.fit_transform(unclassified, default_classification),
-            columns=models.pipe.get_feature_names_out(),
+        unclassified = pd.DataFrame(
+            Residualizer().fit_transform(unclassified, default_classification),
+            columns=unclassified.columns,
             index=unclassified.index,
+        )
+        unclassified_scaled = pd.DataFrame(
+            models.pipe.transform(unclassified),
+            columns=models.pipe.get_feature_names_out(),
+            index=data.index,
         )
         # Remove pcs. explaining minority of variance
         # unclassified_scaled = remove_pcs(
@@ -444,7 +459,9 @@ def classify(
         try:
             if "Windows" in platform.platform():
                 windows_path = Path(r"..\Data\Models")
-                list_of_files = list(windows_path.glob(rf"*{ctx.obj['unknown_str']}.pickle"))
+                list_of_files = list(
+                    windows_path.glob(rf"*{ctx.obj['unknown_str']}.pickle")
+                )
             else:
                 list_of_files = glob.glob(
                     f"../Data/Models/*{ctx.obj['unknown_str']}.pickle"

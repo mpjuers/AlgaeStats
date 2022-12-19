@@ -18,7 +18,11 @@ from sklearn.decomposition import PCA
 from sklearn.model_selection import GridSearchCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import MinMaxScaler, StandardScaler, PolynomialFeatures
+from sklearn.preprocessing import (
+    MinMaxScaler,
+    StandardScaler,
+    PolynomialFeatures,
+)
 from sklearn.utils import check_X_y
 
 
@@ -254,7 +258,7 @@ def newest(path):
     type=str,
     help="""
         The string to append to output files.
-    """
+    """,
 )
 @click.pass_context
 def cli(ctx, polynomial_degree, ignore_unknown, training_set, suffix):
@@ -292,8 +296,8 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set, suffix):
     ctx.obj["training_columns"] = training.columns
     training_arr = pd.DataFrame(
         Residualizer().fit_transform(training, ctx.obj["default_response"]),
-        columns = training.columns,
-        index = training.index
+        columns=training.columns,
+        index=training.index,
     )
     training_scaled = pd.DataFrame(
         ctx.obj["pipe"].fit_transform(
@@ -442,7 +446,9 @@ def classify(
         print(f"processing {file}")
         # Output filename manipulation
         basename = os.path.basename(file)
-        output_base = re.sub(".csv", f"{ctx.obj['suffix']}_classified.csv", basename)
+        output_base = re.sub(
+            ".csv", f"{ctx.obj['suffix']}_classified.csv", basename
+        )
         outfile = f"../Data/Classified/{output_base}"
         # Unclassified data formatting
         data = pd.read_csv(file, index_col="UUID")

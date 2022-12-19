@@ -18,7 +18,7 @@ from sklearn.decomposition import PCA
 from sklearn.model_selection import GridSearchCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler, PolynomialFeatures
+from sklearn.preprocessing import MinMaxScaler, StandardScaler, PolynomialFeatures
 from sklearn.utils import check_X_y
 
 
@@ -247,9 +247,19 @@ def newest(path):
         Default: ../Data/Training
     """,
 )
+@click.option(
+    "--suffix",
+    "-su",
+    default=None,
+    type=str,
+    help="""
+        The string to append to output files.
+    """
+)
 @click.pass_context
-def cli(ctx, polynomial_degree, ignore_unknown, training_set):
+def cli(ctx, polynomial_degree, ignore_unknown, training_set, suffix):
     # Combines all csvs in training directory into a single dataframe
+    ctx.obj["suffix"] = suffix
     ctx.obj["data"] = build_training(training_set)
     if ignore_unknown:
         training = (
@@ -268,9 +278,13 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set):
         ctx.obj["default_response"] = np.full(training.shape[0], -1)
     ctx.obj["pipe"] = Pipeline(
         [
-            ("scaler", StandardScaler()),
+            ("scaler", MinMaxScaler()),
         ]
     )
+    try:
+        training.drop("operator_classification")
+    except KeyError:
+        pass
     training.drop(
         ["class", "ch2-ch1_ratio", "aspect_ratio"], axis=1, inplace=True
     )
@@ -390,7 +404,7 @@ def train(
             f"../Data/Models/{date.today()}"
             f"_C-{c_str}_l1-{l1_str}"
             f"_p-{ctx.obj['polynomial_degree']}"
-            f"{ctx.obj['unknown_str']}.pickle"
+            f"{ctx.obj['unknown_str']}{ctx.obj['suffix']}.pickle"
         ),
         "wb",
     ) as file:
@@ -428,7 +442,7 @@ def classify(
         print(f"processing {file}")
         # Output filename manipulation
         basename = os.path.basename(file)
-        output_base = re.sub(".csv", "_classified.csv", basename)
+        output_base = re.sub(".csv", f"{ctx.obj['suffix']}_classified.csv", basename)
         outfile = f"../Data/Classified/{output_base}"
         # Unclassified data formatting
         data = pd.read_csv(file, index_col="UUID")
@@ -478,7 +492,6 @@ def classify(
         model = models.models.best_estimator_
         # Generate predictions
         predicted = model.predict(unclassified_scaled)
-        classified = unclassified
         data["Class"] = predicted
         data.to_csv(outfile)
     return None

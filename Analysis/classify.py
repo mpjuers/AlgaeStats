@@ -446,7 +446,6 @@ def classify(
         print(f"processing {file}")
         # Output filename manipulation
         basename = os.path.basename(file)
-        breakpoint()
         output_base = re.sub(
             ".csv", f"{ctx.obj['suffix']}_classified.csv", basename
         )

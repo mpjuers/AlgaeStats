@@ -191,7 +191,21 @@ def main(path="../Data/Training/"):
         scatterplot(data, file.replace(r"csv", r"png"))
         yield data
 
+<<<<<<< Updated upstream
 
+||||||| constructed merge base
+<<<<<<< Updated upstream
+||||||| constructed merge base
+breakpoint()
+training_scaled = pipe.fit_transform(data[0])
+test_scaled = pipe.transform(data[1])
+=======
+training_scaled = pipe.fit_transform(data[0])
+test_scaled = pipe.transform(data[1])
+>>>>>>> Stashed changes
+
+=======
+>>>>>>> Stashed changes
 if __name__ == "__main__":
     data_gen = main()
 

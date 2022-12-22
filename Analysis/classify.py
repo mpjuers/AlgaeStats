@@ -263,7 +263,7 @@ def newest(path):
 @click.pass_context
 def cli(ctx, polynomial_degree, ignore_unknown, training_set, suffix):
     # Combines all csvs in training directory into a single dataframe
-    ctx.obj["suffix"] = suffix
+    ctx.obj["suffix"] = suffix if suffix else ""
     ctx.obj["data"] = build_training(training_set)
     if ignore_unknown:
         training = (
@@ -446,10 +446,11 @@ def classify(
         print(f"processing {file}")
         # Output filename manipulation
         basename = os.path.basename(file)
+        breakpoint()
         output_base = re.sub(
             ".csv", f"{ctx.obj['suffix']}_classified.csv", basename
         )
-        outfile = f"../Data/Classified/{output_base}"
+        outfile = rf"../Data/Classified/{output_base}"
         # Unclassified data formatting
         data = pd.read_csv(file, index_col="UUID")
         unclassified = format_columns(data)

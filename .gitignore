@@ -2,3 +2,5 @@ Data
 Session.vim
 tags
 Figures
+.venv
+**/.vscode

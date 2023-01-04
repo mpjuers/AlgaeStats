@@ -7,7 +7,7 @@ import pandas as pd
 class FlowCamConnection:
     def __init__(
         self,
-        local_db,
+        local_db=None,
         flowcam_db="mariadb+mariadbconnector://readonly:cobreadonly@10.111.100.9/flowdb?charset=utf8mb4",
         ):
         """
@@ -18,42 +18,41 @@ class FlowCamConnection:
         """
         self.engines = {
             "flowdb": sqa.create_engine(flowcam_db),
-            "localdb": sqa.create_engine(local_db),
+            # "localdb": sqa.create_engine(local_db),
         }
         self.metadata = {
             "flowdb": sqa.MetaData(),
-            "localdb": sqa.MetaData(),
+            # "localdb": sqa.MetaData(),
         }
-        return self
+        return None 
 
-    def _query(query=None):
+    def _query(self, query=None):
         self._connect()
+        particle_property = sqa.Table(
+                    "particle_property",
+                    self.metadata["flowdb"],
+                    autoload=True,
+                    autoload_with=self.engines["flowdb"],
+                )
         if not query:
-            query = sqa.select(
-                [
-                    sqa.Table(
-                        "particle_property",
-                        self.metadata["flowdb"],
-                        autoload=True,
-                        autoload_with=self.engines["flowdb"],
-                    )
-                ]
-            )
+            # get first ten particles
+            query = sqa.select([particle_property]).where(particle_property.columns.particle <=10)
         out = pd.DataFrame(self.connections["flowdb"].execute(query).fetchall())
         self._disconnect()
         return out
 
-    def _connect():
+    def _connect(self):
         self.connections = {
             "flowdb": self.engines["flowdb"].connect()
-            "localdb": self.engines["localdb"].connect()
+            # "localdb": self.engines["localdb"].connect()
         }
         return None
 
-    def _disconnect():
+    def _disconnect(self):
         for engine in self.engines.values():
             engine.dispose()
         return None
 
 if __name__ == "__main__":
     c = FlowCamConnection()
+    breakpoint()

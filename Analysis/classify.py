@@ -437,7 +437,7 @@ def classify(
     unclassified_path,
     ignore_unknown,
 ):
-    with open(newest("../Data/Models"), "rb") as file:
+    with open(newest(r"../Data/Models"), "rb") as file:
         models = load(file)
     # Extract model with highest likelihood.
     model = models.models.best_estimator_
@@ -447,7 +447,7 @@ def classify(
         # Output filename manipulation
         basename = os.path.basename(file)
         output_base = re.sub(
-            ".csv", f"{ctx.obj['suffix']}_classified.csv", basename
+            ".csv", rf"{ctx.obj['suffix']}_classified.csv", basename
         )
         outfile = rf"../Data/Classified/{output_base}"
         # Unclassified data formatting

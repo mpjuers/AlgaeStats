@@ -23,6 +23,7 @@ from sklearn.preprocessing import (
     StandardScaler,
     PolynomialFeatures,
 )
+from sklearn.neural_network import MLPClassifier
 from sklearn.utils import check_X_y
 
 
@@ -270,7 +271,7 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set, suffix):
             ctx.obj["data"].copy().loc[ctx.obj["data"]["Class"] != "Unknown"]
         )
     else:
-        training = ctx.obj["data"].copy()
+        training = ctx.obj["data"].copy().fillna("-1")
     ctx.obj["unknown_str"] = "_ignore" if ignore_unknown else ""
     ctx.obj["polynomial_degree"] = polynomial_degree
     # Isolate response data.
@@ -282,7 +283,7 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set, suffix):
         ctx.obj["default_response"] = np.full(training.shape[0], -1)
     ctx.obj["pipe"] = Pipeline(
         [
-            ("scaler", MinMaxScaler()),
+            ("scaler", StandardScaler()),
         ]
     )
     try:
@@ -295,7 +296,8 @@ def cli(ctx, polynomial_degree, ignore_unknown, training_set, suffix):
     training = training.select_dtypes(float)
     ctx.obj["training_columns"] = training.columns
     training_arr = pd.DataFrame(
-        Residualizer().fit_transform(training, ctx.obj["default_response"]),
+        training,
+        # Residualizer().fit_transform(training, ctx.obj["default_response"]),
         columns=training.columns,
         index=training.index,
     )
@@ -380,7 +382,9 @@ def train(
     models = grid_search(
         ctx.obj["training"],
         ctx.obj["training_response"],
-        param_grid=generate_param_grid(C=c_grid, l1_ratio=l1_grid),
+        # param_grid=generate_param_grid(C=c_grid, l1_ratio=l1_grid),
+        param_grid={"alpha": np.exp(np.linspace(np.log(1 / 10), np.log(1), 10))},
+        model=MLPClassifier(),
         max_iter=max_iter,
         verbose=verbose,
         return_train_score=return_train_score,

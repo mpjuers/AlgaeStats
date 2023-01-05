@@ -38,18 +38,18 @@ class FlowCamConnection:
         self.metadata["localdb"].create_all(self.engines["localdb"])
         return None
 
-    def _query(self, query=None):
+    def _query(self, table_name="particle_property", query=None):
         self._connect()
-        particle_property = sqa.Table(
-            "particle_property",
+        table = sqa.Table(
+            table_name,
             self.metadata["flowdb"],
             autoload=True,
             autoload_with=self.engines["flowdb"],
         )
         if not query:
             # get first ten particles
-            query = sqa.select([particle_property]).where(
-                particle_property.columns.particle <= 10
+            query = sqa.select([table]).where(
+                table.columns.particle <= 10
             )
         out = pd.DataFrame(self.connections["flowdb"].execute(query).fetchall())
         self._disconnect()
@@ -70,4 +70,3 @@ class FlowCamConnection:
 
 if __name__ == "__main__":
     c = FlowCamConnection()
-    breakpoint()
